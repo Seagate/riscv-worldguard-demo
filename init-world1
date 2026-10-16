@@ -1,0 +1,38 @@
+#!/bin/sh
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts 2>/dev/null   # required by telnetd
+
+# QEMU user-mode networking defaults: guest 10.0.2.15, gateway 10.0.2.2.
+# No console exists in this world (no UART in the DTB) -- the network IS
+# the interface. Host reaches us via the hostfwd rule in boot.sh:
+#   telnet localhost 2323
+ifconfig lo 127.0.0.1 up
+ifconfig eth0 10.0.2.15 netmask 255.255.255.0 up
+route add default gw 10.0.2.2 2>/dev/null
+
+hostname world1
+mkdir -p /var/log
+
+# Run the isolation self-test ONCE at boot and stash the result, so every
+# telnet session can see it (the test reads World0 RAM, which faults by
+# design -- doing that once at boot is cleaner than per-login).
+/bin/wg-selftest.sh 1 > /var/log/wg-selftest.txt 2>&1 || true
+
+# Drop each telnet login straight into a shell that first prints the
+# self-test result, then hands over interactively.
+cat > /etc/telnet-login.sh << 'INNER'
+#!/bin/sh
+cat /var/log/wg-selftest.txt 2>/dev/null
+echo "(World1 shell -- WID 1. Isolation result above.)"
+exec /bin/sh
+INNER
+chmod +x /etc/telnet-login.sh
+
+# -F foreground, -l login program. Respawn loop in case telnetd exits.
+while true; do
+	telnetd -F -l /etc/telnet-login.sh
+	sleep 1
+done

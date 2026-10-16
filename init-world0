@@ -1,0 +1,16 @@
+#!/bin/sh
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+
+echo ""
+echo "=============================================="
+echo " WORLD 0  (hart 0, WID 3/trusted, unrestricted)"
+echo "=============================================="
+
+# Automated isolation self-test. From the trusted world, reading World1
+# RAM is EXPECTED to succeed -- the meaningful (blocked) direction is
+# tested from World1. See wg-selftest.sh for the rationale.
+/bin/wg-selftest.sh 0
+
+exec /bin/sh

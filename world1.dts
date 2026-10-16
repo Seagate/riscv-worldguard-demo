@@ -1,0 +1,156 @@
+/dts-v1/;
+
+/*
+ * World 1 device tree — hart 1, WorldGuard WID 1, deliberately minimal:
+ * memory + ramdisk + virtio-mmio (network) ONLY. No UART node, so this
+ * kernel cannot fight world0 over the single serial port. Interaction is
+ * via telnet over virtio-net (see init-world1).
+ *
+ * RAM: 0x88000000 - 0x8fffffff (128 MB, wgChecker slot2: WID1 RW only)
+ *   Kernel Image : 0x88200000
+ *   initrd       : 0x8c000000 - INITRD1_END (patched at build time)
+ *   this DTB     : 0x8e000000
+ *
+ * PLIC context note: the hardware PLIC has 4 contexts on a 2-hart virt
+ * machine (hart0-M, hart0-S, hart1-M, hart1-S = contexts 0..3). Linux's
+ * PLIC driver derives context indices from the POSITION of each entry in
+ * interrupts-extended, so all four positions must be present here even
+ * though this world only uses context 3 (hart1 S-mode). cpu@0 is included
+ * but status="disabled" so this kernel neither boots it nor claims it —
+ * its intc node exists only so contexts 0..2 parse and are skipped/unused.
+ * If the fork's PLIC differs (per-world PLIC, different context map),
+ * verify against a dumpdtb from the fork.
+ *
+ * Timer note: no SBI runtime services exist for this hart (it bypasses
+ * sbi_init()), so the kernel MUST use Sstc (stimecmp) — hence "sstc" in
+ * the ISA string below, menvcfg.STCE set in fw_base.S, and
+ * CONFIG_RISCV_SSTC required in the kernel.
+ */
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	compatible = "riscv-virtio";
+	model = "riscv-virtio,qemu (world1, WID1)";
+
+	chosen {
+		bootargs = "root=/dev/ram rdinit=/init";
+		linux,initrd-start = <0x0 0x8c000000>;
+		linux,initrd-end = <0x0 INITRD1_END>;
+	};
+
+	memory@88000000 {
+		device_type = "memory";
+		reg = <0x0 0x88000000 0x0 0x8000000>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <10000000>;
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			compatible = "riscv";
+			reg = <0>;
+			status = "disabled";
+			riscv,isa = "rv64imafdc_sstc";
+			mmu-type = "riscv,sv48";
+
+			cpu0_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+
+		cpu1: cpu@1 {
+			device_type = "cpu";
+			compatible = "riscv";
+			reg = <1>;
+			status = "okay";
+			riscv,isa = "rv64imafdc_sstc";
+			mmu-type = "riscv,sv48";
+
+			cpu1_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+	};
+
+	soc {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		compatible = "simple-bus";
+		ranges;
+
+		plic: interrupt-controller@c000000 {
+			compatible = "sifive,plic-1.0.0", "riscv,plic0";
+			reg = <0x0 0xc000000 0x0 0x600000>;
+			interrupt-controller;
+			#interrupt-cells = <1>;
+			#address-cells = <0>;
+			/* contexts 0..3: hart0-M, hart0-S, hart1-M, hart1-S */
+			interrupts-extended = <&cpu0_intc 11>, <&cpu0_intc 9>,
+					      <&cpu1_intc 11>, <&cpu1_intc 9>;
+			riscv,ndev = <95>;
+		};
+
+		/*
+		 * All 8 virt virtio-mmio transports are listed because which
+		 * slot QEMU assigns to -device virtio-net-device depends on
+		 * device ordering; probing empty slots is harmless. Verify
+		 * base addrs/IRQs against a dumpdtb from the fork.
+		 */
+		virtio_mmio@10001000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10001000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <1>;
+		};
+		virtio_mmio@10002000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10002000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <2>;
+		};
+		virtio_mmio@10003000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10003000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <3>;
+		};
+		virtio_mmio@10004000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10004000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <4>;
+		};
+		virtio_mmio@10005000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10005000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <5>;
+		};
+		virtio_mmio@10006000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10006000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <6>;
+		};
+		virtio_mmio@10007000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10007000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <7>;
+		};
+		virtio_mmio@10008000 {
+			compatible = "virtio,mmio";
+			reg = <0x0 0x10008000 0x0 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <8>;
+		};
+	};
+};

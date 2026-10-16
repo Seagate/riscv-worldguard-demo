@@ -1,0 +1,167 @@
+/dts-v1/;
+
+/*
+ * World 0 device tree — hart 0, standard configuration.
+ *
+ * PASSED TO QEMU VIA -dtb, NOT via -device loader. fw_jump's FDT
+ * relocation copies whatever DTB QEMU hands it (a1) to FW_JUMP_FDT_ADDR
+ * (0x87f00000) — so a loader-placed DTB at that address gets overwritten
+ * by QEMU's generated one. With -dtb, this tree replaces QEMU's, and it
+ * is ALSO what OpenSBI generic platform init parses (hence cpu@1 below).
+ * RAM: 0x80000000 - 0x87ffffff (128 MB)
+ *   OpenSBI fw_jump : 0x80000000 (PMP-protected by OpenSBI itself)
+ *   Kernel Image    : 0x80200000
+ *   initrd          : 0x84000000 - INITRD0_END (patched at build time)
+ *   this DTB        : 0x87f00000
+ *
+ * VERIFY AGAINST THE FORK: run
+ *   qemu-system-riscv64 -M virt,dumpdtb=ref.dtb -smp 2 -m 256M
+ *   dtc -I dtb -O dts ref.dtb > ref.dts
+ * and diff the soc nodes (clint/plic/serial reg + interrupts, and any
+ * wgChecker nodes the fork adds) against this file. The values below are
+ * the long-standing QEMU virt defaults but the fork may differ.
+ */
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	compatible = "riscv-virtio";
+	model = "riscv-virtio,qemu (world0)";
+
+	chosen {
+		bootargs = "console=ttyS0 maxcpus=1 root=/dev/ram rdinit=/init";
+		stdout-path = "/soc/serial@10000000";
+		linux,initrd-start = <0x0 0x84000000>;
+		linux,initrd-end = <0x0 INITRD0_END>;
+
+		/*
+		 * OpenSBI domain: hart 1 boots World1 Linux with full SBI
+		 * runtime services (the direct-mret approach left hart 1
+		 * with no per-hart SBI state, crashing OpenSBI on World1's
+		 * first ecall). OpenSBI parses and strips these nodes before
+		 * handing the DTB to World0 Linux.
+		 * Syntax per opensbi docs/domain_support.md -- verify with:
+		 *   docker run --rm wg-builder sh -c \
+		 *     'sed -n 1,150p /opt/build/opensbi/docs/domain_support.md'
+		 */
+		opensbi-domains {
+			compatible = "opensbi,domain,config";
+
+			tmem: tmem {
+				compatible = "opensbi,domain,memregion";
+				base = <0x0 0x88000000>;
+				order = <27>;	/* 128 MB @ 0x88000000 */
+			};
+
+			tplic: tplic {
+				compatible = "opensbi,domain,memregion";
+				base = <0x0 0xc000000>;
+				order = <23>;	/* 8 MB: PLIC */
+				mmio;
+			};
+
+			tmmio: tmmio {
+				compatible = "opensbi,domain,memregion";
+				base = <0x0 0x10000000>;
+				order = <16>;	/* 64 KB: uart+virtio slots */
+				mmio;
+			};
+
+			tdomain: world1-domain {
+				compatible = "opensbi,domain,instance";
+				possible-harts = <&cpu1>;
+				boot-hart = <&cpu1>;
+				regions = <&tmem 0x3f>, <&tplic 0x3f>,
+					  <&tmmio 0x3f>;
+				next-addr = <0x0 0x88200000>;
+				next-arg1 = <0x0 0x8e000000>;
+				next-mode = <0x1>;	/* S-mode */
+			};
+		};
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x8000000>;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <10000000>;
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			compatible = "riscv";
+			reg = <0>;
+			status = "okay";
+			riscv,isa = "rv64imafdc_sstc";
+			mmu-type = "riscv,sv48";
+
+			cpu0_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+
+		/*
+		 * cpu@1 must be "okay" here even though it belongs to World1:
+		 * this DTB (passed via -dtb) is what OpenSBI's generic platform
+		 * parses for hart count. status="disabled" would give
+		 * hart_count=1, making hart1's hart-index lookup in
+		 * continue_normal_boot fall into _start_hang before it ever
+		 * reaches the World1 divergence. World0 Linux is prevented
+		 * from trying to online it by maxcpus=1 in bootargs.
+		 */
+		cpu1: cpu@1 {
+			device_type = "cpu";
+			compatible = "riscv";
+			reg = <1>;
+			status = "okay";
+			opensbi-domain = <&tdomain>;
+			riscv,isa = "rv64imafdc_sstc";
+			mmu-type = "riscv,sv48";
+
+			cpu1_intc: interrupt-controller {
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+	};
+
+	soc {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		compatible = "simple-bus";
+		ranges;
+
+		clint@2000000 {
+			compatible = "sifive,clint0", "riscv,clint0";
+			reg = <0x0 0x2000000 0x0 0x10000>;
+			interrupts-extended = <&cpu0_intc 3>, <&cpu0_intc 7>,
+					      <&cpu1_intc 3>, <&cpu1_intc 7>;
+		};
+
+		plic: interrupt-controller@c000000 {
+			compatible = "sifive,plic-1.0.0", "riscv,plic0";
+			reg = <0x0 0xc000000 0x0 0x600000>;
+			interrupt-controller;
+			#interrupt-cells = <1>;
+			#address-cells = <0>;
+			/* contexts 0..3: hart0-M, hart0-S, hart1-M, hart1-S */
+			interrupts-extended = <&cpu0_intc 11>, <&cpu0_intc 9>,
+					      <&cpu1_intc 11>, <&cpu1_intc 9>;
+			riscv,ndev = <95>;
+		};
+
+		serial@10000000 {
+			compatible = "ns16550a";
+			reg = <0x0 0x10000000 0x0 0x100>;
+			interrupt-parent = <&plic>;
+			interrupts = <10>;
+			clock-frequency = <3686400>;
+		};
+	};
+};
