@@ -14,6 +14,11 @@
 FROM ubuntu:22.04 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 
+ARG    QEMU_REV=825a215c003cd028e26c7d19aa5049d957345f43 
+ARG QEMU_BRANCH=riscv-wg-v4-alpha 
+ARG OPENSBI_REV=332798211e7232da60158b0545b23c61b5338516 
+ARG BUSYBOX_REV=5eee8017a827659b6fb9e29ab1241eb4227c56f7 
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential git ninja-build pkg-config \
     libglib2.0-dev libpixman-1-dev libfdt-dev libslirp-dev \
@@ -28,9 +33,9 @@ WORKDIR /opt/build
 # --------------------------------------------------------------------------
 # 1. WorldGuard-enabled QEMU
 # --------------------------------------------------------------------------
-RUN git clone https://github.com/cwshu/qemu/ && \
+RUN git clone https://github.com/cwshu/qemu/ --revision ${QEMU_REV} && \
     cd qemu && \
-    git checkout riscv-wg-v4-alpha && \
+    git checkout ${QEMU_BRANCH} && \
     git submodule update --init --recursive
 
 # Ubuntu 22.04 has Python 3.10, which lacks stdlib tomllib (3.11+);
@@ -52,7 +57,7 @@ RUN cd qemu && mkdir -p build && cd build && \
 # self-contained block. Pin OPENSBI_REF for reproducible builds.
 # --------------------------------------------------------------------------
 ARG OPENSBI_REF=master
-RUN git clone https://github.com/riscv-software-src/opensbi.git && \
+RUN git clone https://github.com/riscv-software-src/opensbi.git --revision ${OPENSBI_REV} && \
     cd opensbi && git checkout ${OPENSBI_REF}
 
 COPY wg_world1.S.inc apply_wg_patch.py /opt/build/
@@ -88,7 +93,7 @@ RUN cd linux && \
 # --------------------------------------------------------------------------
 # 4. Busybox (static) + two initramfs images
 # --------------------------------------------------------------------------
-RUN git clone --depth 1 https://git.busybox.net/busybox && \
+RUN git clone --depth 1 https://git.busybox.net/busybox  --revision ${BUSYBOX_REV} && \
     cd busybox && \
     make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- defconfig && \
     sed -i 's/^# CONFIG_STATIC .*/CONFIG_STATIC=y/' .config && \

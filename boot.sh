@@ -43,7 +43,7 @@ exec ${QEMU} \
   -netdev user,id=n1,hostfwd=tcp::2323-:23 \
   -device virtio-net-device,netdev=n1 \
   \
-  -serial mon:stdio
+  -serial mon:stdio \
   -trace "wg_*" -D /out/wg-trace.log
 
 # Interaction:

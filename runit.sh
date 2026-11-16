@@ -1,4 +1,4 @@
-#!/usr/bin/sh
+#!/bin/sh
 #
 mkdir -p ~/wg-demo/traces
 
