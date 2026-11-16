@@ -33,8 +33,9 @@ WORKDIR /opt/build
 # --------------------------------------------------------------------------
 # 1. WorldGuard-enabled QEMU
 # --------------------------------------------------------------------------
-RUN git clone https://github.com/cwshu/qemu/ --revision ${QEMU_REV} && \
-    cd qemu && \
+RUN git clone https://github.com/cwshu/qemu/  && \
+    cd qemu && \ 
+    git checkout ${QEMU_REV} && \
     git checkout ${QEMU_BRANCH} && \
     git submodule update --init --recursive
 
@@ -57,8 +58,8 @@ RUN cd qemu && mkdir -p build && cd build && \
 # self-contained block. Pin OPENSBI_REF for reproducible builds.
 # --------------------------------------------------------------------------
 ARG OPENSBI_REF=master
-RUN git clone https://github.com/riscv-software-src/opensbi.git --revision ${OPENSBI_REV} && \
-    cd opensbi && git checkout ${OPENSBI_REF}
+RUN git clone https://github.com/riscv-software-src/opensbi.git  && \
+    cd opensbi && git checkout ${OPENSBI_REV}
 
 COPY wg_world1.S.inc apply_wg_patch.py /opt/build/
 RUN python3 /opt/build/apply_wg_patch.py \
@@ -93,8 +94,9 @@ RUN cd linux && \
 # --------------------------------------------------------------------------
 # 4. Busybox (static) + two initramfs images
 # --------------------------------------------------------------------------
-RUN git clone --depth 1 https://git.busybox.net/busybox  --revision ${BUSYBOX_REV} && \
+RUN git clone --depth 1 https://git.busybox.net/busybox   && \
     cd busybox && \
+#    git checkout ${BUSYBOX_REV} && \
     make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- defconfig && \
     sed -i 's/^# CONFIG_STATIC .*/CONFIG_STATIC=y/' .config && \
     sed -i 's/^# CONFIG_DEVMEM .*/CONFIG_DEVMEM=y/' .config && \
